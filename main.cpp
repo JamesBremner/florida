@@ -51,15 +51,28 @@ private:
 class cJob
 {
 public:
+    cJob()
+        : myArrival( std::chrono::steady_clock::now() )
+    {
+
+    }
     void push_back( const std::string& field )
     {
         vField.push_back( field );
     }
     int FieldCount()
     {
-        std::cout << "FC " << vField.size() << "\n";
         return (int) vField.size();
     }
+    void setTasks();
+
+    int NextTask();
+
+    int getSeconds()
+    {
+        return mySeconds;
+    }
+
     int getPointGranularity() const
     {
         return atoi( vField[17].c_str() );
@@ -97,8 +110,13 @@ public:
         return vField[16 ];
     }
 private:
-    std::vector<  std::string > vField;
+    std::vector<  std::string > vField;     // The fields in the job specification sent by client
+    std::vector< int > myTodo;              // The tasks still to be done
+    int myDone;                             // the number of tasks completed
+    std::chrono::steady_clock::time_point myArrival;                       // arrival time
+    int mySeconds;
 };
+
 
 cClient::cClient( cServer& server )
     : myServer( server )
@@ -141,76 +159,44 @@ void cClient::Send()
 
 void cServer::Rcvr( const std::string& job )
 {
+    static int jobtotaltime = 0;
+    static int jobcount = 0;
+    jobcount++;
+
     auto timenow =
         chrono::system_clock::to_time_t(chrono::system_clock::now());
     cout << ctime(&timenow);
 
-    std::cout << "client sent job: " << job << "\n";
+    std::cout << "client sent job: " << job.substr(0,10) << " ... " << job.substr(job.length()-10) << "\n";
 
     cJob theJob;
-
-
-    /*
-    Tasks are completed in different orders depending on thepoint_granularity
-
-    (PG) field as follows:
-    PG=1: T1, T2, T3, T4, T5
-    PG=2: T1, T3, T4, T5, T2
-    PG=3: T1, T5, T4, T3, T2
-    PG=4: T1, T4, T2, T5, T3
-    PG=5: T1, T2, T5, T3, T4
-    PG=7: T1, T3, T2, T5, T4
-    (There are no jobs for PG=6)
-
-    */
     Task1JobCreation( theJob, job );
-    switch( theJob.getPointGranularity() )
+    theJob.setTasks();
+    while ( 1 )
     {
-
-    case 1:
-        Task2StatelessCounter( theJob );
-        Task3VicinityComputer( theJob );
-        Task4TallyType( theJob );
-        Task5RegisterExpensiveHouses( theJob );
-        break;
-
-    case 2:
-        Task3VicinityComputer( theJob );
-        Task4TallyType( theJob );
-        Task5RegisterExpensiveHouses( theJob );
-        Task2StatelessCounter( theJob );
-        break;
-
-    case 3:
-        Task5RegisterExpensiveHouses( theJob );
-        Task4TallyType( theJob );
-        Task3VicinityComputer( theJob );
-        Task2StatelessCounter( theJob );
-        break;
-
-    case 4:
-        Task4TallyType( theJob );
-        Task2StatelessCounter( theJob );
-        Task5RegisterExpensiveHouses( theJob );
-        Task3VicinityComputer( theJob );
-        break;
-
-    case 5:
-        Task2StatelessCounter( theJob );
-        Task5RegisterExpensiveHouses( theJob );
-        Task3VicinityComputer( theJob );
-        Task4TallyType( theJob );
-
-    case 7:
-        Task3VicinityComputer( theJob );
-        Task2StatelessCounter( theJob );
-        Task5RegisterExpensiveHouses( theJob );
-        Task4TallyType( theJob );
-        break;
+        int next = theJob.NextTask();
+        if( next == -1 )
+            break;
+        switch( next )
+        {
+        case 2:
+            Task2StatelessCounter( theJob );
+            break;
+        case 3:
+            Task3VicinityComputer( theJob );
+            break;
+        case 4:
+            Task4TallyType( theJob );
+            break;
+        case 5:
+            Task5RegisterExpensiveHouses( theJob );
+            break;
+        }
     }
-    timenow =
-        chrono::system_clock::to_time_t(chrono::system_clock::now());
-    cout << "\n" << ctime(&timenow) << "All tasks complete\n";
+
+    cout << "\n" << "All tasks complete in " << theJob.getSeconds() << " secs\n";
+    jobtotaltime += theJob.getSeconds();
+    cout << jobcount << " jobs completed in " << jobtotaltime << " secs\n";
 }
 
 void cServer::Task1JobCreation( cJob& theJob, const std::string& job )
@@ -283,6 +269,79 @@ void cServer::Task5RegisterExpensiveHouses( cJob& theJob )
     if( theJob.getEqLimit() > 800000 )
         std::this_thread::sleep_for (std::chrono::seconds( 10 ));
     std::cout << "Task5 ";
+}
+
+void cJob::setTasks()
+{
+    /*
+        /*
+    Tasks are completed in different orders depending on thepoint_granularity
+
+    (PG) field as follows:
+    PG=1: T1, T2, T3, T4, T5
+    PG=2: T1, T3, T4, T5, T2
+    PG=3: T1, T5, T4, T3, T2
+    PG=4: T1, T4, T2, T5, T3
+    PG=5: T1, T2, T5, T3, T4
+    PG=7: T1, T3, T2, T5, T4
+    (There are no jobs for PG=6)
+
+    */
+    switch( getPointGranularity() )
+    {
+    case 1:
+        myTodo.push_back( 2 );
+        myTodo.push_back( 3 );
+        myTodo.push_back( 4 );
+        myTodo.push_back( 5 );
+        break;
+    case 2:
+        myTodo.push_back( 3 );
+        myTodo.push_back( 4 );
+        myTodo.push_back( 5 );
+        myTodo.push_back( 2 );
+        break;
+    case 3:
+        myTodo.push_back( 5 );
+        myTodo.push_back( 4 );
+        myTodo.push_back( 3 );
+        myTodo.push_back( 2 );
+        break;
+    case 4:
+        myTodo.push_back( 4 );
+        myTodo.push_back( 2 );
+        myTodo.push_back( 5 );
+        myTodo.push_back( 3 );
+        break;
+    case 5:
+        myTodo.push_back( 2 );
+        myTodo.push_back( 5 );
+        myTodo.push_back( 3 );
+        myTodo.push_back( 4 );
+        break;
+    case 7:
+        myTodo.push_back( 3 );
+        myTodo.push_back( 2 );
+        myTodo.push_back( 5 );
+        myTodo.push_back( 4 );
+        break;
+    }
+    myDone = 0;
+}
+
+int cJob::NextTask()
+{
+    // check for more tasks
+    if( ( ! myTodo.size() ) || myDone >= myTodo.size() )
+    {
+        mySeconds = chrono::duration_cast<chrono::seconds>(
+                         std::chrono::steady_clock::now() - myArrival).count();
+        return -1;
+    }
+
+    int next = myTodo[ myDone ];
+    myDone++;
+    return next;
 }
 
 int main()

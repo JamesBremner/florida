@@ -7,7 +7,8 @@
 		<Option compiler="gcc_v83" />
 		<Build>
 			<Target title="Debug">
-				<Option output="../bin/florida" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/florida" prefix_auto="1" extension_auto="1" />
+				<Option working_dir="bin" />
 				<Option object_output="obj/Debug/" />
 				<Option type="1" />
 				<Option compiler="gcc_v83" />
