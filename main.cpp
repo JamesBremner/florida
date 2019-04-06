@@ -5,6 +5,7 @@
 #include <thread>         // std::this_thread::sleep_for
 #include <chrono>         // std::chrono::seconds
 #include <cmath>
+#include <queue>
 
 using namespace std;
 
@@ -38,7 +39,9 @@ private:
 class cServer
 {
 public:
+    cServer();
     void Rcvr( const std::string& job );
+    void DoWork();
     void Task1JobCreation( cJob& theJob, const std::string& job );
     void Task2StatelessCounter( cJob& theJob );
     void Task3VicinityComputer( cJob& theJob );
@@ -46,15 +49,17 @@ public:
     void Task5RegisterExpensiveHouses( cJob& theJob );
 private:
     int myTally[2];
+    std::queue< cJob > myJobQueue;
+    std::thread myWorkerThread;
 };
 
 class cJob
 {
 public:
-    cJob()
+    cJob( int count )
         : myArrival( std::chrono::steady_clock::now() )
+        , myCount( count )
     {
-
     }
     void push_back( const std::string& field )
     {
@@ -71,6 +76,10 @@ public:
     int getSeconds()
     {
         return mySeconds;
+    }
+    int getCount()
+    {
+        return myCount;
     }
 
     int getPointGranularity() const
@@ -110,11 +119,13 @@ public:
         return vField[16 ];
     }
 private:
+    int myCount;
     std::vector<  std::string > vField;     // The fields in the job specification sent by client
     std::vector< int > myTodo;              // The tasks still to be done
     int myDone;                             // the number of tasks completed
     std::chrono::steady_clock::time_point myArrival;                       // arrival time
-    int mySeconds;
+    int mySeconds;                          // seconds needed to complete this job
+    static int theTotalSeconds;              // seconds for all jobs
 };
 
 
@@ -157,6 +168,11 @@ void cClient::Send()
     }
 }
 
+cServer::cServer()
+    : myWorkerThread( &cServer::DoWork, this )
+{
+}
+
 void cServer::Rcvr( const std::string& job )
 {
     static int jobtotaltime = 0;
@@ -167,36 +183,55 @@ void cServer::Rcvr( const std::string& job )
         chrono::system_clock::to_time_t(chrono::system_clock::now());
     cout << ctime(&timenow);
 
-    std::cout << "client sent job: " << job.substr(0,10) << " ... " << job.substr(job.length()-10) << "\n";
+    std::cout << "\nclient sent job: " << job.substr(0,10) << " ... " << job.substr(job.length()-10) << "\n";
 
-    cJob theJob;
+    cJob theJob( jobcount );
     Task1JobCreation( theJob, job );
     theJob.setTasks();
-    while ( 1 )
+    myJobQueue.push( theJob );
+    std::cout << "Job queue length " << myJobQueue.size() << "\n";
+
+}
+
+void cServer::DoWork()
+{
+    while( 1 )
     {
-        int next = theJob.NextTask();
-        if( next == -1 )
-            break;
-        switch( next )
+        if( ! myJobQueue.size() )
         {
-        case 2:
-            Task2StatelessCounter( theJob );
-            break;
-        case 3:
-            Task3VicinityComputer( theJob );
-            break;
-        case 4:
-            Task4TallyType( theJob );
-            break;
-        case 5:
-            Task5RegisterExpensiveHouses( theJob );
-            break;
+            std::cout << "DoWork waiting\n";
+            std::this_thread::sleep_for (std::chrono::seconds( 1 ));
+        }
+        else
+        {
+            int next = myJobQueue.front().NextTask();
+            if( next == -1 )
+            {
+               // std::cout << "\nDoWork job complete\n";
+                myJobQueue.pop();
+            }
+            else
+            {
+                //std::cout << "DoWork task " << next << "\n";
+                switch( next )
+                {
+                case 2:
+                    Task2StatelessCounter( myJobQueue.front() );
+                    break;
+                case 3:
+                    Task3VicinityComputer( myJobQueue.front() );
+                    break;
+                case 4:
+                    Task4TallyType( myJobQueue.front() );
+                    break;
+                case 5:
+                    Task5RegisterExpensiveHouses( myJobQueue.front() );
+                    break;
+                }
+            }
         }
     }
 
-    cout << "\n" << "All tasks complete in " << theJob.getSeconds() << " secs\n";
-    jobtotaltime += theJob.getSeconds();
-    cout << jobcount << " jobs completed in " << jobtotaltime << " secs\n";
 }
 
 void cServer::Task1JobCreation( cJob& theJob, const std::string& job )
@@ -231,7 +266,7 @@ void cServer::Task2StatelessCounter( cJob& theJob )
         ;
     for( int k = 0; k < theJob.getFrLimit(); k++ )
         ;
-    std::cout << "Task2 ";
+    std::cout <<"Job"<< theJob.getCount() << "Task2 ";
 }
 
 void cServer::Task3VicinityComputer( cJob& theJob )
@@ -239,7 +274,7 @@ void cServer::Task3VicinityComputer( cJob& theJob )
     double dlo = theJob.getLongitude() + 81;
     double dla = theJob.getLatitude() - 30;
     double distance = sqrt( dlo * dlo + dla * dla );
-    std::cout << "Task3 ";
+    std::cout <<"Job"<< theJob.getCount() << "Task3 ";
 }
 /*
 Task 4: Tally by Type (stateful)
@@ -259,7 +294,7 @@ void cServer::Task4TallyType( cJob& theJob )
         else if ( theJob.getConstruction() == "Wood" )
             myTally[1]++;
     }
-    std::cout << "Task4 ";
+    std::cout <<"Job"<< theJob.getCount() << "Task4 ";
 }
 
 void cServer::Task5RegisterExpensiveHouses( cJob& theJob )
@@ -268,8 +303,10 @@ void cServer::Task5RegisterExpensiveHouses( cJob& theJob )
     // use EqLimit instead until clarfied
     if( theJob.getEqLimit() > 800000 )
         std::this_thread::sleep_for (std::chrono::seconds( 10 ));
-    std::cout << "Task5 ";
+    std::cout <<"Job"<< theJob.getCount() << "Task5 ";
 }
+
+int cJob::theTotalSeconds = 0;
 
 void cJob::setTasks()
 {
@@ -335,7 +372,10 @@ int cJob::NextTask()
     if( ( ! myTodo.size() ) || myDone >= myTodo.size() )
     {
         mySeconds = chrono::duration_cast<chrono::seconds>(
-                         std::chrono::steady_clock::now() - myArrival).count();
+                        std::chrono::steady_clock::now() - myArrival).count();
+        std::cout  << "\nJob " << myCount << " complete in " << mySeconds << " secs";
+        theTotalSeconds += mySeconds;
+        cout <<"( " << myCount << " jobs completed in " << theTotalSeconds << " secs )\n";
         return -1;
     }
 
