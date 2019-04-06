@@ -242,7 +242,6 @@ void cServer::Task1JobCreation( cJob& theJob, const std::string& job )
         theJob.push_back(a);
     if( theJob.FieldCount() < 18 )
         throw std::runtime_error("Task1JobCreation insufficient fields");
-    std::cout << "Task1 ";
 }
 /*
 Task 2: Stateless Counter (pretty useless actually!)
@@ -379,6 +378,13 @@ int cJob::NextTask()
         return -1;
     }
 
+    if( ! myDone )
+    {
+        int wait = chrono::duration_cast<chrono::seconds>(
+                        std::chrono::steady_clock::now() - myArrival).count();
+        std::cout << "\nJob " << myCount << " starting after waiting " << wait << " secs\n";
+    }
+
     int next = myTodo[ myDone ];
     myDone++;
     return next;
@@ -389,6 +395,10 @@ int main()
     cServer theServer;
     cClient theClient( theServer );
     theClient.Read();
-    theClient.Send();
+
+    // start client sending from its own thread
+    std::thread client_thread( &cClient::Send, &theClient );
+    client_thread.join();
+
     return 0;
 }
